@@ -1,0 +1,17 @@
+llama-index-core
+llama-index-llms-openai
+llama-index-llms-gemini
+llama-index-embeddings-openai
+llama-index-embeddings-openai-like
+llama-index-embeddings-gemini
+llama-index-vector-stores-qdrant
+llama-index-retrievers-bm25
+qdrant-client
+python-dotenv
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+dotenv
+openrouter
+llama-index-llms-anthropic
+streamlit

@@ -1,0 +1,10 @@
+.env
+last_run.json
+data/docs/
+__pycache__/
+*.pyc
+.venv/
+CLAUDE.md
+plan.md
+project_spec.md
+ai-playground-chain-docs-reader.json

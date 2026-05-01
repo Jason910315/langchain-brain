@@ -35,6 +35,9 @@ langchain-brain/
 * `config.py`
 控制 RAG 流程中所有模型變數，包括負責回答生成的 LLM 與負責向量化的 Embedding 模型，並透過 LlamaIndex 的全域物件 `Settings` 統一注入至 pipeline 各層。
 
+對話介面
+![對話介面](images/chat_interface.jpg)
+
 ## 🔄 RAG Pipeline
 
 ### 文件同步流程
@@ -81,8 +84,6 @@ sequenceDiagram
     rag/pipeline.py-->>App: 生成回答
     App-->>User: 回答 + 來源引用
 ```
-
-![對話介面](images/chat_interface.jpg)
 
 ## 🛠️ 技術堆疊
 

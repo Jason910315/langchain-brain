@@ -135,4 +135,8 @@ def sync_new_docs(new_files: list[dict], answer_llm: str):
     print(f"同步完成，本次新增 {len(documents)} 份文件到 {COLLECTION_NAME} 空間中")
     return len(documents)
 
+if __name__ == "__main__":
+    new_files = detect_new_docs()
+    sync_new_docs(new_files, "OpenAI/gpt-4o-mini")
+
 

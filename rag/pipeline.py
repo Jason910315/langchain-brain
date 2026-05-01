@@ -6,6 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from llama_index.core import VectorStoreIndex
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import get_response_synthesizer
+from llama_index.core.chat_engine import CondensePlusContextChatEngine
 from rag.retriever import build_retriever
 
 
@@ -31,6 +32,20 @@ def build_query_engine(index: VectorStoreIndex, top_k: int = 5) -> RetrieverQuer
     return RetrieverQueryEngine(
         retriever=retriever,
         response_synthesizer=response_synthesizer,
+    )
+
+def build_multi_turn_chat_engine(index: VectorStoreIndex, top_k: int = 5):
+    """
+    建構具有多輪對話、記憶功能的問答引擎
+    - CondensePlusContextChatEngine 會將歷史對話加上當前 query，做為 user prompt 去檢索，並且將結果與歷史對話提供給回答模型
+    """
+    
+    # 建立可以執行 chunk 搜尋的 retriever
+    retriever = build_retriever(index, top_k)
+
+    return CondensePlusContextChatEngine.from_defaults(
+        retriever=retriever,
+        verbose=False,
     )
 
 def query_with_sources(engine: RetrieverQueryEngine, question: str) -> str:

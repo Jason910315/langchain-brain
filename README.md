@@ -61,7 +61,6 @@ langchain-brain/
              知識庫更新完成
 ```
 
-
 ### 查詢流程
 
 ```mermaid
@@ -93,6 +92,7 @@ sequenceDiagram
 | **關鍵字搜尋** | BM25Retriever | 本地全文搜尋，與向量搜尋互補 |
 | **原始文件儲存** | Google Drive API（Service Account） | 遞迴掃描資料夾，下載 MD / MDX 文件 |
 | **前端介面** | Streamlit | 聊天 UI、狀態管理、`@st.cache_resource` 快取 |
+| **對話持久化** | Supabase | 跨會話儲存問答紀錄，側邊欄歷史對話管理 |
 
 ### 🚀 核心技術亮點
 
@@ -118,6 +118,10 @@ QDRANT_URL=https://xxx.qdrant.io
 QDRANT_API_KEY=...
 
 GOOGLE_DRIVE_FOLDER_ID=...       # Google Drive 根資料夾 ID
+
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_KEY=...
+DEFAULT_USER_ID=...              # 暫時的單一使用者 ID
 ```
 
 2. **Service Account**
@@ -135,8 +139,18 @@ streamlit run app.py
 
 | Collection | Embedding Provider | 向量維度 | 說明 |
 | :--- | :--- | :--- | :--- |
-| `langchain_docs_openai` | OpenAI `text-embedding-3-small` | 1536 | 預設 collection |
-| `langchain_docs_qwen` | Qwen `qwen3-embedding-8b`（OpenRouter） | 4096 | 切換 Qwen 時自動建立 |
+| `langchain_docs_text-embedding-3-small` | OpenAI `text-embedding-3-small` | 1536 | 預設 collection |
+| `langchain_docs_qwen3-embedding-8b` | Qwen `qwen3-embedding-8b`（OpenRouter） | 4096 | 切換 Qwen 時自動建立 |
+
+## Supabase 資料庫設計
+
+對話紀錄以雙表結構儲存，`sessions` 管理對話列表，`messages` 儲存每則訊息。
+
+| 資料表 | 主要欄位 |
+| :--- | :--- |
+| `user` | `id`, `name`, `email`, `created_at`|
+| `sessions` | `id`, `user_id`, `title`, `created_at`|
+| `messages` | `id`, `session_id`, `role`, `content`, `sources`, `created_at` |
 
 ## 🔑 Third-Party Licenses
 

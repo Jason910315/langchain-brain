@@ -82,6 +82,7 @@ sequenceDiagram
     App-->>User: 回答 + 來源引用
 ```
 
+![對話介面](images/chat_interface.jpg)
 
 ## 🛠️ 技術堆疊
 

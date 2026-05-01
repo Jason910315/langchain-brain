@@ -42,11 +42,10 @@ def get_embedding():
     """
     取得 embedding 與 retrieval 使用的模型
     """
-    if EMBEDDING_PROVIDER == "openai":
+    if EMBEDDING_PROVIDER == "text-embedding-3-small":
           from llama_index.embeddings.openai import OpenAIEmbedding
           return OpenAIEmbedding(
               model="text-embedding-3-small",
-              dimensions=512,
               api_key=os.environ["OPENAI_API_KEY"],
           )
     elif EMBEDDING_PROVIDER == "qwen":

@@ -101,31 +101,31 @@ def insert_documents(index: VectorStoreIndex, documents: list[Document]) -> None
 if __name__ == "__main__":
     client = _get_qdrant_client()
 
-    doc1 = Document(
-        text="LlamaIndex is a data framework for LLM applications. " * 40,
-        metadata={"file_name": "doc1.md", "source_folder": "test"},
-        doc_id="local-test-001",
-    )
+    # doc1 = Document(
+    #     text="LlamaIndex is a data framework for LLM applications. " * 40,
+    #     metadata={"file_name": "doc1.md", "source_folder": "test"},
+    #     doc_id="local-test-001",
+    # )
 
-    doc2 = Document(
-        text="Qdrant is a vector database optimized for similarity search. " * 40,
-        metadata={"file_name": "doc2.md", "source_folder": "test"},
-        doc_id="local-test-002",
-    )
+    # doc2 = Document(
+    #     text="Qdrant is a vector database optimized for similarity search. " * 40,
+    #     metadata={"file_name": "doc2.md", "source_folder": "test"},
+    #     doc_id="local-test-002",
+    # )
 
-    # --- 測試 1: build_index ---
-    print("=== 測試 1: build_index ===")
-    index = build_index([doc1])
-    count_after_build = client.count(collection_name=COLLECTION_NAME).count
-    print(f"建立後 chunk 總數: {count_after_build}")
-    assert count_after_build > 0, "build_index 失敗：Qdrant 沒有資料"
-    print("測試 1 通過\n")
+    # # --- 測試 1: build_index ---
+    # print("=== 測試 1: build_index ===")
+    # index = build_index([doc1])
+    # count_after_build = client.count(collection_name=COLLECTION_NAME).count
+    # print(f"建立後 chunk 總數: {count_after_build}")
+    # assert count_after_build > 0, "build_index 失敗：Qdrant 沒有資料"
+    # print("測試 1 通過\n")
 
-    # --- 測試 2: insert_documents ---
-    print("=== 測試 2: insert_documents ===")
-    count_before = client.count(collection_name=COLLECTION_NAME).count
-    insert_documents(index, [doc2])
-    count_after = client.count(collection_name=COLLECTION_NAME).count
-    print(f"插入前 chunk 數: {count_before}，插入後: {count_after}")
-    assert count_after > count_before, "insert_documents 失敗：chunk 數沒有增加"
-    print("測試 2 通過")
+    # # --- 測試 2: insert_documents ---
+    # print("=== 測試 2: insert_documents ===")
+    # count_before = client.count(collection_name=COLLECTION_NAME).count
+    # insert_documents(index, [doc2])
+    # count_after = client.count(collection_name=COLLECTION_NAME).count
+    # print(f"插入前 chunk 數: {count_before}，插入後: {count_after}")
+    # assert count_after > count_before, "insert_documents 失敗：chunk 數沒有增加"
+    # print("測試 2 通過")

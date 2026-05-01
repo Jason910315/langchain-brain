@@ -21,6 +21,8 @@ langchain-brain/
 ├── requirements.txt
 ├── main.py                     
 ├── app.py                        # Streamlit 聊天介面
+├── db/
+│   └── chat_store.py             # 處理對話訊息的資料庫 CRUD 操作
 ├── ingestion/
 │   ├── doc_loader.py             # Google Drive API 文件載入
 │   └── sync_docs.py              # Drive ↔ Qdrant 差異同步
@@ -96,6 +98,7 @@ sequenceDiagram
 
 - **RRF 混合排名**：`向量搜尋` 與 `BM25` 分數尺度不相容，**RRF** 直接對排名做融合（`score = Σ 1/(k + rankᵢ)`），無需正規化，技術文件的精確術語與語意查詢皆能準確命中。
 - **快取**：streamlit app 以 `@st.cache_resource` 將 query_engine 建立包裝成快取函式，初次執行後結果會保存在記憶體中供重新渲染直接使用。
+- **歷史對話記憶管理**： 使用 `CondensePlusContextChatEngine` 建構多輪對話引擎，使每一次查詢都包含歷史記憶。
 - **LLM 拒答機制**：Retriever 永遠回傳 Top-K 結果，若檢索結果上下文不足時主動說明無法回答，避免幻覺。
 
 

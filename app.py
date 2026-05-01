@@ -3,9 +3,17 @@ LangChain Brain 聊天介面
 執行方式：streamlit run app.py
 """
 
-import sys
+import sys, os
 from pathlib import Path
 import streamlit as st
+from db import chat_store
+from dotenv import load_dotenv
+from llama_index.core.llms import ChatMessage, MessageRole
+
+load_dotenv()
+
+# 暫時的使用者測試 ID (日後要區分不同使用者)
+DEFAULT_USER_ID = os.getenv("DEFAULT_USER_ID")
 
 sys.path.append(str(Path(__file__).parent))
 
@@ -149,7 +157,7 @@ def _build_engine(answer_llm):
     """連接 Qdrant collection 並建立 QueryEngine，有新文件 ingest 後需清除此快取"""
     from config import setup_settings
     from rag.indexer import collection_exists, load_index
-    from rag.pipeline import build_query_engine
+    from rag.pipeline import build_multi_turn_chat_engine
     setup_settings(answer_llm)   # 前端使用者可自由選回答模型
 
     # 知識庫尚未建立的階段，要先按同步按鈕建立
@@ -159,15 +167,18 @@ def _build_engine(answer_llm):
     
     # 已經有知識庫 collection，載入並建立成 index
     index = load_index(answer_llm)
-    return build_query_engine(index, top_k=5)
+    return build_multi_turn_chat_engine(index, top_k=5)
 
 # --- 初始化 Session State ---
-# st.session_state 是全域狀態容器，用在每次重新渲染間保留資料狀態
+# st.session_state 是全域狀態容器，每次重新渲染還是會保留，所以可以重複使用
 if "messages" not in st.session_state:
     st.session_state.messages = []   # 當前對話的所有訊息
 
 if "show_sources" not in st.session_state:
     st.session_state.show_sources = True   # 是否顯示來源引用
+
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = None   # 當前對話的 session ID
 
 
 # ---側邊欄，進入頁面後會有一系列工作執行，會在側邊欄顯示 ---
@@ -180,12 +191,12 @@ with st.sidebar:
     st.markdown("## SYSTEM")
     is_ready = False  # 預設系統未就緒
     error_msg = None  # 錯誤訊息
-    query_engine = None  # 預設查詢引擎狀態
+    chat_engine = None  # 預設對話引擎狀態
 
     try:
-        # 1. 先連接 Qdrant collection 建立 QueryEngine (不論 collection 是否存在)
+        # 1. 先連接 Qdrant collection 建立 ChatEngine (不論 collection 是否存在)
         with st.spinner("連接知識庫中..."):  # st.spinner 顯示旋轉動畫模擬載入中
-            query_engine = _build_engine(st.session_state.llm_option)
+            chat_engine = _build_engine(st.session_state.llm_option)
         # 如果成功連接，代表系統就緒
         is_ready = True
     except Exception as e:
@@ -261,7 +272,7 @@ with st.sidebar:
                 with st.spinner(f"偵測到新文件，重建知識庫中..."):
                     # 有新文件就執行 Ingestion 步驟，重建知識庫
                     count = sync_new_docs(new_files, st.session_state.llm_option)
-                _build_engine.clear()    # 重建知識庫後要清除原先的快取，否則還是舊的 query_engine
+                _build_engine.clear()    # 重建知識庫後要清除原先的快取，否則還是舊的 chat_engine
                 st.session_state["sync_result"] = {"count": count}
                 st.rerun()
         except Exception as e:
@@ -275,6 +286,40 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
+
+    # --- 歷史對話 session ---
+    st.markdown("## HISTORY")
+
+    # 開啟新對話 (清空原本的對話介面)
+    if st.button("+ 新對話", use_container_width=True):
+        st.session_state.messages = []  # 新對話所有訊息清空
+        st.session_state.current_session_id = None  # None 代表是還沒建進 Supabase 的
+        st.rerun()
+
+    if DEFAULT_USER_ID:
+        # 列出該 user 的所有對話清單 (每個對話項目都要依照 col1, col2 設計去跑)
+        for session in chat_store.list_sessions(DEFAULT_USER_ID):
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                  is_current = session["id"] == st.session_state.current_session_id  # 判斷哪個是當下正在看的
+                  label = f"{'▶ ' if is_current else ''}{session['title']}"
+
+                  # 每個對話項目都是一個按鈕，按下便是選擇了其中一個 session
+                  if st.button(label, key=f"sess_{session['id']}", use_container_width=True):
+                        # 載入該 session 的對話紀錄，並覆蓋掉整個 messages 狀態，讓他成為當下正在看的歷史對話紀錄
+                      st.session_state.messages = chat_store.load_messages(session["id"])
+                      st.session_state.current_session_id = session["id"]  # 更新當前 session，之後新訊息會寫進這個 session
+                      st.rerun()
+            # 刪除按鈕
+            with col2:
+                if st.button("🗑", key=f"del_{session['id']}"):
+                    chat_store.delete_session(session["id"])
+
+                    # 要加入判斷如果清除的 session 是當前在看的，前端的狀態也要清掉
+                    if st.session_state.current_session_id == session["id"]:
+                        st.session_state.messages = []
+                        st.session_state.current_session_id = None
+                    st.rerun()
 
     # 範例問題
     st.markdown("## EXAMPLES")
@@ -327,23 +372,45 @@ for message in st.session_state.messages:
 pending = st.session_state.pop("pending_question", None)   # 取出範例問題，且要清除，因為是一次性的
 
 
-# --- 問答邏輯 ---
+# --- 問答邏輯 (包含即時顯示當下的提問與回答) ---
 def process_question(question: str):
-    """處理使用者問題，呼叫 RAG pipeline 並顯示結果"""
+    """處理使用者問題，呼叫 RAG pipeline 並顯示結果在介面上"""
 
-    # 顯示使用者訊息
+    # --- 1. 處理 user 訊息 ---
     with st.chat_message("user"):
         st.markdown(question)   # 這邊立刻顯示，不等 RAG
 
     # 將所有訊息存進 session state，方便顯示 (也讓前面函式可以取出使用)
     st.session_state.messages.append({"role": "user", "content": question})
 
-    # 呼叫 RAG pipeline
+    # 代表這個 session 是新開的
+    if st.session_state.current_session_id is None and DEFAULT_USER_ID:
+        new_session_id = chat_store.create_session(DEFAULT_USER_ID, question[:40])
+        st.session_state.current_session_id = new_session_id
+
+    if st.session_state.current_session_id and DEFAULT_USER_ID:
+        chat_store.save_message(st.session_state.current_session_id, "user", question)  # sources 是 None
+
+    # 將歷史對話加上到這次的 question 成為新的 use prompt
+
+    # --- 2. 處理 assistant 訊息 ---
+    # 呼叫 RAG pipeline 
     with st.chat_message("assistant"):
         with st.spinner("搜尋知識庫中..."):
             try:
-                response = query_engine.query(question)
-                answer = str(response)
+                # 當下 messages 都是從 load_messages() 方法取出，因此直接從前端狀態拿
+                history_messages = st.session_state.messages[:-1][-50:]  # 只取最後 50 筆
+                chat_history = [
+                    # ChatMessage 是 llama_index 表達單一訊息的資料結構
+                    ChatMessage(
+                        role=MessageRole.USER if m["role"] == "user" else MessageRole.ASSISTANT,
+                        content=m["content"],
+                    )
+                    for m in history_messages
+                ]
+                # 記得一定要傳入 chat_history，才能覆蓋引擎的內部 memory
+                response = chat_engine.chat(question, chat_history=chat_history)
+                answer = response.response
 
                 # 萃取來源資訊
                 sources = []
@@ -377,6 +444,9 @@ def process_question(question: str):
                     "sources": sources,
                 })
 
+                if st.session_state.current_session_id and DEFAULT_USER_ID:
+                    chat_store.save_message(st.session_state.current_session_id, "assistant", answer, sources)
+
             except Exception as e:
                 error_text = f"查詢失敗：{str(e)}"
                 st.error(error_text)
@@ -385,17 +455,30 @@ def process_question(question: str):
                     "content": error_text,
                     "sources": [],
                 })
+                
+                # 就算對話失敗，也要把失敗回覆存進資料庫
+                if st.session_state.current_session_id and DEFAULT_USER_ID:
+                    chat_store.save_message(st.session_state.current_session_id, "assistant", error_text, [])
 
 
+# --- 處理問題進入後的邏輯 (丟進 RAG 的查詢回答以及，需判斷問問題是否有新開 session)---
 # 1. 處理範例問題
 if pending and is_ready:
+    prev_session_id = st.session_state.current_session_id
     process_question(pending)  # 當成一般的問題丟進去呼叫 RAG
+
+    # 如果是新開 session，上一步 process_question() 會自動建新的 session，因此 current_session_id 會不同
+    if st.session_state.current_session_id != prev_session_id:
+        st.rerun()  # 重跑頁面讓側邊欄也更新
 
 # 2. 處理使用者輸入
 question = st.chat_input("問題...")  
 if question:                          # 再判斷
+    prev_session_id = st.session_state.current_session_id
     process_question(question)
 
+    if st.session_state.current_session_id != prev_session_id:
+        st.rerun()  
 
 # --- 空白狀態提示 ---
 if not st.session_state.messages and is_ready:

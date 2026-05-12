@@ -8,3 +8,5 @@ CLAUDE.md
 plan.md
 project_spec.md
 ai-playground-chain-docs-reader.json
+sync_docs.py
+ft_train.jsonl

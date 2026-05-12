@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path, PurePosixPath
 from datetime import datetime
@@ -101,6 +102,31 @@ def sync_new_docs(new_files: list[dict], answer_llm: str):
             content = download_file(service, file_info["id"])
             content = content.replace("\u200b", "").replace("\ufeff", "")  # 清隱形字元
             content = content.strip()                                      # 清頭尾空白
+
+            clean_lines = []
+
+            content = re.sub(r'<audio[^>]*>.*?</audio>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            content = re.sub(r'<video[^>]*>.*?</video>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            content = re.sub(r'<iframe[^>]*>.*?</iframe>', '', content, flags=re.DOTALL | re.IGNORECASE)
+            content = re.sub(r'<img[^>]*>', '', content, flags=re.IGNORECASE)
+            # 移除 data: 開頭的 base64 內嵌資料（不管在什麼標籤裡）
+            content = re.sub(r'data:[a-zA-Z/]+;base64,[A-Za-z0-9+/=\n]+', '', content)
+            # 移除 Markdown 圖片語法
+            content = re.sub(r'!\[.*?\]\(.*?\)', '', content)
+
+            # 逐行過濾亂碼
+            for line in content.split("\n"):
+                total = len(line.strip())
+                if total > 20:
+                    readable = len(re.findall(
+                        r'[a-zA-Z0-9\u4e00-\u9fff\s\.\,\!\?\:\;\-\_\(\)\[\]\{\}\/\#\`\*\=\>\<\+]',
+                        line
+                    ))
+                    if readable / total < 0.6:
+                        continue
+                clean_lines.append(line)
+
+            content = "\n".join(clean_lines)
 
             if len(content) < 50:
                 print("跳過 (內容太少)")

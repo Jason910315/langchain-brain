@@ -8,6 +8,7 @@ from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import get_response_synthesizer
 from llama_index.core.chat_engine import CondensePlusContextChatEngine
 from rag.retriever import build_retriever
+from llama_index.core import Settings
 
 
 """
@@ -45,6 +46,7 @@ def build_multi_turn_chat_engine(index: VectorStoreIndex, top_k: int = 5):
 
     return CondensePlusContextChatEngine.from_defaults(
         retriever=retriever,
+        llm=Settings.llm,  # 要傳入模型參數，因為使用者可在前端自由切換
         verbose=False,
     )
 

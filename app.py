@@ -210,6 +210,7 @@ with st.sidebar:
         value=st.session_state.show_sources,
     )
 
+    # 使用者可調整查詢要取回幾個相關 chunk，預設 5 個 (top_k 變數會傳進 _build_engine 函式中)
     top_k = st.slider(
         "Top-K chunks",
         min_value=1,
@@ -371,7 +372,7 @@ for message in st.session_state.messages:
                     st.markdown(
                         f'<div class="source-box">'
                         f'<strong>[{i}]</strong> {source["file"]} '
-                        f'<span style="color:#3fb950">RFF score: {source["score"]:.3f}</span><br>'
+                        f'<span style="color:#3fb950">relatedness score: {source["score"]:.3f}</span><br>'
                         f'<span style="color:#6e7681">{source["preview"]}</span>'
                         f"</div>",
                         unsafe_allow_html=True,

@@ -1,14 +1,14 @@
 # 🧠 Personal Notes Brain — 個人筆記 RAG 問答系統
 
-以**個人 HackMD 筆記**為知識來源的 RAG 問答系統。以 **LlamaIndex** 為核心框架，結合 Qdrant 向量資料庫，讓你用自然語言詢問自己過去寫過的任何筆記內容，系統回傳答案並附上來源引用。
+以**個人 HackMD 筆記**為知識來源的 RAG 問答系統。以 **LlamaIndex** 為核心框架，結合 Qdrant 向量資料庫，讓你用自然語言詢問自己過去寫過的任何筆記內容，系統透過檢索知識庫內容後，交由 LLM 產生回答，在前端顯示答案並附上來源引用。
 
 ## 系統功能
 
 | 功能 | 描述 |
 | :--- | :--- |
 | **混合檢索（Hybrid Search）** | 結合向量相似度搜尋與 `BM25` 關鍵字匹配，以 **RRF 演算法** 融合兩者排名。 |
+| **Reranker 重排序** | 透過 Cohere 的 `rerank-multilingual-v3.0` 模型對檢索向量進行相關性重排序。|
 | **HackMD 增量同步** | 可自動偵測筆記更新，只重建有變動的筆記 chunk，不重建整個 collection。 |
-| **來源引用** | 每則回答附帶可展開的來源區塊，顯示筆記標題、相關性分數與內容預覽。 |
 | **多輪對話記憶** | `CondensePlusContextChatEngine` 多輪問答，記憶跨越整個對話 session。 |
 | **歷史對話管理** | Streamlit 側邊欄列出所有歷史對話，可切換、重新開啟或刪除。 |
 | **LLM 自由切換** | 支援 OpenAI / Anthropic / Fine-tuned 模型，前端 selectbox 即時切換。 |
@@ -65,22 +65,31 @@ flowchart TD
 ### 查詢流程
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant User as 使用者
-    participant App as app.py
-    participant Retriever as rag/retriever.py
-    participant Qdrant as Qdrant Cloud
-    participant Engine as rag/pipeline.py
+flowchart TD
+    A([👤 User query]) --> B[CondensePlusContextChatEngine]
+    B --> C[將歷史對話 + 當前問題壓縮成單一查詢]
+    C --> D[HybridRetriever]
 
-    User->>App: 輸入問題
-    App->>Retriever: 建立混合檢索
-    Qdrant->>Retriever: VectorIndexRetriever（餘弦相似度）
-    Qdrant->>Retriever: BM25Retriever（關鍵字搜尋）
-    Retriever->>Retriever: QueryFusionRetriever（RRF 融合排名）
-    App->>Engine: Top K chunks + 問題 → CondensePlusContextChatEngine
-    Engine-->>App: 生成回答
-    App-->>User: 回答 + 來源引用（筆記標題 + 內容預覽）
+    D --> E[VectorRetriever餘弦相似度]
+    D --> F[BM25Retriever關鍵字匹配]
+
+    E --> G[Qdrant Cloud]
+    F --> G
+
+    G --> H[各自回傳 Top-K chunks]
+    H --> I[RRF 融合排名]
+    I --> J[Top-K chunks]
+
+    J --> K[Cohere Rerank Cross-Encoder 重新評分]
+    K --> L[重排序後的 Top-K chunks]
+
+    L --> M[LLM 壓縮後的查詢 + chunks + 歷史對話]
+    M --> N([💬 回答 + 來源引用])
+
+    style A fill:#4A90D9,color:#fff,stroke:none
+    style N fill:#2A9D8F,color:#fff,stroke:none
+    style K fill:#E0B422,color:#fff,stroke:none
+    style G fill:#888,color:#fff,stroke:none
 ```
 
 ## 🛠️ 技術堆疊
@@ -95,10 +104,11 @@ sequenceDiagram
 
 ### 🚀 核心技術亮點
 
-- **增量更新（先刪後建）**：用 `note_id` 作為 Qdrant payload filter，偵測到筆記更新時只刪除該篇的所有舊 chunk 再重新 embed，不重建整個 collection。
-- **RRF 混合排名**：`向量搜尋` 與 `BM25` 分數尺度不相容，RRF 直接對排名做融合（`score = Σ 1/(k + rankᵢ)`），無需正規化，技術術語與語意查詢皆能準確命中。
-- **多輪對話記憶**：使用 `CondensePlusContextChatEngine`，每次查詢前先將歷史對話壓縮成單一問題，再帶著 context 向量庫做檢索。
-- **`@st.cache_resource` 快取**：將 query engine 建立包裝成快取函式，初次執行後結果保存在記憶體中，只有當有狀態更動才需重建 engine。
+- **增量更新（先刪後建）**: 用 `note_id` 作為 Qdrant payload filter，偵測到筆記更新時只刪除該篇的所有舊 chunk 再重新 embed，不重建整個 collection。
+- **RRF 混合排名**: `向量搜尋` 與 `BM25` 分數尺度不相容，RRF 直接對排名做融合（`score = Σ 1/(k + rankᵢ)`），無需正規化，技術術語與語意查詢皆能準確命中。
+- **Rerank Machanism**: 針對 RRF 搜尋得到的 Top-K chunks，額外使用 Cross-Encoder 進行重排序，讓最相關的 chunk 排在最前面，提升 LLM 回答品質。
+- **多輪對話記憶**: 使用 `CondensePlusContextChatEngine`，每次查詢前先將歷史對話壓縮成單一問題，再帶著 context 向量庫做檢索。
+- **`@st.cache_resource` 快取**: 將 query engine 建立包裝成快取函式，初次執行後結果保存在記憶體中，只有當有狀態更動才需重建 engine。
 
 ## Quick Start
 
@@ -158,7 +168,8 @@ python main.py
 
 ## Qdrant Collection 設計
 
-Collection 命名規則：`personal_notes_{embedding_provider}`。切換 embedding 時自動建立新 collection，舊的保留不動，兩者互不干擾。
+Collection 命名規則：`personal_notes_{embedding_provider}`。在 .env 內切換 embedding model 時會自動切換成讀取特定 collection。
+若切換的 collection 還未建立，就需要手動重跑一次 `sync_note.py` 建立，而舊的保留不動，兩者互不干擾。
 
 | Collection | Embedding Provider | 說明 |
 | :--- | :--- | :--- |

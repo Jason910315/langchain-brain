@@ -6,6 +6,7 @@ llama-index-embeddings-openai-like
 llama-index-embeddings-gemini
 llama-index-vector-stores-qdrant
 llama-index-retrievers-bm25
+llama-index-postprocessor-cohere-rerank
 qdrant-client
 python-dotenv
 google-auth-oauthlib

@@ -85,7 +85,7 @@ def load_index(answer_llm: str) -> VectorStoreIndex:
 
 def insert_documents(index: VectorStoreIndex, documents: list[Document]) -> None:
     """
-    未來想新增文件或 github issue 資料時使用，直接增量插入，不需將整個 collection 重建
+    未來想新增文件資料時使用，直接增量插入，不需將整個 collection 重建
     """
     pipeline = IngestionPipeline(
         transformations=[

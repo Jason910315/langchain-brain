@@ -13,7 +13,7 @@ QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 # 切換 LLM 時 embedding 維度不同，不能共用同一個 collection，要重建
-COLLECTION_NAME = f"langchain_docs_{EMBEDDING_PROVIDER}"
+COLLECTION_NAME = f"personal_notes_{EMBEDDING_PROVIDER}"
 
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64
@@ -35,6 +35,28 @@ def get_llm(llm):
             model="claude-sonnet-4-6",
             api_key=os.environ["ANTHROPIC_API_KEY"],
         )
+    elif llm == "ft:gpt-4o-mini-2024-07-18:personal::DeCCm77q":
+        from llama_index.llms.openai import OpenAI
+        # OpenAI 微調後的模型呼叫方式跟普通 OpenAI 模型一樣
+        # [重要] 微調模型需要明確設定 system_prompt，否則 LlamaIndex 預設 prompt 會蓋過微調行為
+        # 讓微調模型知道自己是 RAG 問答助理，context 會由系統注入，不要靠訓練記憶回答
+        return OpenAI(
+            model="ft:gpt-4o-mini-2024-07-18:personal::DeCCm77q",
+            api_key=os.getenv("OPENAI_API_KEY"),
+            system_prompt=(
+               """你是一位專精於 LangChain / LangGraph / LangSmith 的技術助理。
+               請用以下格式回答：
+               1. 先給出結論（1-2 句話）
+               2. 再列出具體步驟或說明
+               3. 最後補充原理或注意事項
+
+               回答要專業、清楚，適時用生活化比喻幫助理解。
+               如果文件內容不足以回答這個問題，請回覆:「嗯⋯這題難倒我了，知識庫裡找不到相關資料。你可以嘗試：換個問法重新提問，或直接查閱官方文件，或許答案就在那裡等你！
+               也可以聯繫管理員補充相關文件。」
+            """
+            ),
+        )
+        
     else:
         raise ValueError(f"不支援的回答模型: {llm}")
 

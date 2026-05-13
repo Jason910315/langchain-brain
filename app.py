@@ -1,5 +1,5 @@
 """
-LangChain Brain 聊天介面
+Personal Notes Brain 聊天介面
 執行方式：streamlit run app.py
 """
 
@@ -19,7 +19,7 @@ sys.path.append(str(Path(__file__).parent))
 
 # --- 頁面基本設定（必須是第一個 Streamlit 指令）---
 st.set_page_config(
-    page_title="LangChain Brain",
+    page_title="Personal Notes Brain",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",  # 預設展開側邊欄
@@ -150,27 +150,28 @@ hr {
 
 # --- 載入 RAG Pipeline ---
 
-# 第一次載入頁面 → 執行函式，結果存進快取，之後每次重新整理 → 直接用快取，不重新執行
+# 第一次載入頁面 → 執行函式，結果存進快取，之後每次重新整理 (若沒東西改變) → 直接用快取，不重新執行
 # 只有呼叫 _build_engine.clear() → 清除快取，下次重新執行
-@st.cache_resource(show_spinner=False)   #  可以快取 function 的返回結果，讓頁面重新渲染時直接拿
-def _build_engine(answer_llm):
+@st.cache_resource(show_spinner=False)   # 快取的 key 是參數，同樣的參數永遠拿同一個物件，不同的參數才會建新的物件
+def _build_engine(answer_llm, top_k):
     """連接 Qdrant collection 並建立 QueryEngine，有新文件 ingest 後需清除此快取"""
     from config import setup_settings
     from rag.indexer import collection_exists, load_index
     from rag.pipeline import build_multi_turn_chat_engine
-    setup_settings(answer_llm)   # 前端使用者可自由選回答模型
+    setup_settings(answer_llm)   # 前端使用者可自由選回答模型，一換模型若沒有該快取的 key 就重建 engine
 
     # 知識庫尚未建立的階段，要先按同步按鈕建立
     # 注意!!!!其實這個判斷警示不應該顯示在前端，因為建立知識庫是我們開發者事先就要全部建立好，而不是交由使用者按鈕 (但還是保留避免例外)
     if not collection_exists():
         raise RuntimeError("知識庫尚未建立，請按「🔄 同步新文件」按鈕進行初始化")
-    
+
     # 已經有知識庫 collection，載入並建立成 index
     index = load_index(answer_llm)
-    return build_multi_turn_chat_engine(index, top_k=5)
+    return build_multi_turn_chat_engine(index, top_k=top_k)
 
 # --- 初始化 Session State ---
 # st.session_state 是全域狀態容器，每次重新渲染還是會保留，所以可以重複使用
+# 每次重啟伺服器進頁面都是一個新的對話，除非你再額外點選已存在的對話
 if "messages" not in st.session_state:
     st.session_state.messages = []   # 當前對話的所有訊息
 
@@ -186,45 +187,11 @@ with st.sidebar:
     # 只在第一次初始化 RAG 回答模型，之後 render 不覆寫
     if "llm_option" not in st.session_state:
         st.session_state.llm_option = "OpenAI/gpt-4o-mini"
-
-    # 載入狀態
-    st.markdown("## SYSTEM")
-    is_ready = False  # 預設系統未就緒
-    error_msg = None  # 錯誤訊息
-    chat_engine = None  # 預設對話引擎狀態
-
-    try:
-        # 1. 先連接 Qdrant collection 建立 ChatEngine (不論 collection 是否存在)
-        with st.spinner("連接知識庫中..."):  # st.spinner 顯示旋轉動畫模擬載入中
-            chat_engine = _build_engine(st.session_state.llm_option)
-        # 如果成功連接，代表系統就緒
-        is_ready = True
-    except Exception as e:
-        error_msg = str(e)
-
-    if is_ready:
-        st.markdown('<span class="status-badge">● ONLINE</span>', unsafe_allow_html=True)
-        # 顯示切換模型的提示
-        if "model_switched" in st.session_state:
-            # 每次顯示後就要 pop() 清空狀態，這樣下一次切換才可以重新將 model_switched 加入 
-            st.success(f"已切換至 {st.session_state.pop('model_switched')}")
-        # 顯示上一次同步結果（按鈕觸發後由 session_state 傳入）
-        if "sync_result" in st.session_state:
-            result = st.session_state.pop("sync_result")
-            # 有無新文件進入是不同的 count
-            if result["count"] > 0:
-                st.info(f"已同步 {result['count']} 份新文件")
-            else:
-                st.caption("知識庫已是最新，無新文件")
-    # 如果連接失敗，顯示錯誤訊息
-    else:
-        st.markdown('<span class="status-badge status-badge-warning">● OFFLINE</span>', unsafe_allow_html=True)
-        st.warning(error_msg)
-
-    st.markdown("---")
+    if "top_k" not in st.session_state:
+        st.session_state.top_k = 5
 
     # 可自由切換回答模型 (非向量化與檢索)
-    _llm_options = ["OpenAI/gpt-4o-mini", "Anthropic/claude-sonnet-4-6"]
+    _llm_options = ["OpenAI/gpt-4o-mini", "Anthropic/claude-sonnet-4-6", "ft:gpt-4o-mini-2024-07-18:personal::DeCCm77q"]
     llm_option = st.selectbox(
         "回答模型",
         options=_llm_options,
@@ -235,9 +202,8 @@ with st.sidebar:
     if llm_option != st.session_state.llm_option:
         st.session_state.llm_option = llm_option
         st.session_state["model_switched"] = llm_option
-        st.rerun()  # 重跑頁面就會重新執行 _build_engine()，看是拿快取還是重建
+        st.rerun()  # 重跑頁面就會重新執行 _build_engine()，看是拿快取還是重建 (如果該回答模型之前有建過 engine，就拿快取)
 
-    # 設定
     st.markdown("## SETTINGS")
     st.session_state.show_sources = st.toggle(   # 每次按 toggle 都是重新渲染頁面一次
         "顯示來源引用",
@@ -248,33 +214,76 @@ with st.sidebar:
         "Top-K chunks",
         min_value=1,
         max_value=10,
-        value=5,
+        value=st.session_state.top_k,
         help="每次查詢取回幾個相關 chunk",
     )
+    # top_k 改變時也要更新 session_state，讓快取 key 跟著變
+    if top_k != st.session_state.top_k:
+        st.session_state.top_k = top_k
+        st.rerun()
+
+    st.markdown("---")
+
+    # 載入狀態
+    st.markdown("## SYSTEM")
+    is_ready = False  # 預設系統未就緒
+    error_msg = None  # 錯誤訊息
+    chat_engine = None  # 預設對話引擎狀態
+
+    try:
+        # 1. 先連接 Qdrant collection 建立 ChatEngine (不論 collection 是否存在)
+        with st.spinner("連接知識庫中..."):  # st.spinner 顯示旋轉動畫模擬載入中
+            # top_k 也加入快取 key，確保 slider 調整後能重建 engine
+            chat_engine = _build_engine(st.session_state.llm_option, st.session_state.top_k)
+        # 如果成功連接，代表系統就緒
+        is_ready = True
+    except Exception as e:
+        error_msg = str(e)
+
+    if is_ready:
+        st.markdown('<span class="status-badge">● ONLINE</span>', unsafe_allow_html=True)
+        # 顯示切換模型的提示
+        if "model_switched" in st.session_state:
+            # 每次顯示後就要 pop() 清空狀態，這樣下一次切換才可以重新將 model_switched 加入
+            st.success(f"已切換至 {st.session_state.pop('model_switched')}")
+        # 顯示上一次同步結果（按鈕觸發後由 session_state 傳入）
+        if "sync_result" in st.session_state:
+            # result 其實就是執行 sync_notes() 函式後的返回結果
+            result = st.session_state.pop("sync_result")
+
+            parts = [] 
+            if result["new"] > 0:
+                parts.append(f"新增 {result['new']} 篇筆記")
+            if result["updated"] > 0:
+                parts.append(f"更新 {result['updated']} 篇筆記")
+            st.info(f"已同步筆記知識庫，{', '.join(parts)}")
+        
+        else:
+            st.caption("知識庫已是最新，無需同步")
+
+    # 如果連接失敗，顯示錯誤訊息
+    else:
+        st.markdown('<span class="status-badge status-badge-warning">● OFFLINE</span>', unsafe_allow_html=True)
+        st.warning(error_msg)
 
     st.markdown("---")
 
     # --- 知識庫同步 (點同步按鈕就執行) ---
     st.markdown("## SYNC")  
-    if st.button("🔄 同步新文件", use_container_width=True):
+    if st.button("🔄 同步筆記知識庫", use_container_width=True):
         from config import setup_settings
-        from ingestion.sync_docs import detect_new_docs, sync_new_docs
+        from ingestion.sync_notes import sync_notes
         setup_settings(st.session_state.llm_option)
         try:
-            with st.spinner("比對是否存在新文件中..."):
-                # 先判斷是否存在 Drive 中有新文件
-                new_files = detect_new_docs()
+            with st.spinner("同步 HackMD 筆記中..."):
+                result = sync_notes()
+            
+            # 代表這次同步作業，有新的知識更新到 Qdrant，就要清除 engine 快取，確保下一次問答用的是最新知識庫
+            if result["new"] > 0 or result["updated"] > 0:
+                _build_engine.clear()
 
-            if not new_files:
-                st.session_state["sync_result"] = {"count": 0}
-                st.rerun()    # 重新渲染頁面
-            else:
-                with st.spinner(f"偵測到新文件，重建知識庫中..."):
-                    # 有新文件就執行 Ingestion 步驟，重建知識庫
-                    count = sync_new_docs(new_files, st.session_state.llm_option)
-                _build_engine.clear()    # 重建知識庫後要清除原先的快取，否則還是舊的 chat_engine
-                st.session_state["sync_result"] = {"count": count}
-                st.rerun()
+            st.session_state["sync_result"] = result
+            st.rerun()
         except Exception as e:
             st.error(f"同步失敗：{str(e)}")
 
@@ -339,9 +348,9 @@ with st.sidebar:
 
 # --- 主畫面 ---
 # 這裡要注意一點，所有對話的內容都是 st.markdown() 去渲染，因此原生 LLM 輸出的 md 回覆都會正常顯示
-st.markdown("# 🧠 LangChain Brain")
+st.markdown("# 🧠 Personal Notes Brain")
 st.markdown(
-    "LangChain / LangGraph / LangSmith 知識庫問答系統",
+    "Jason 的個人筆記知識庫問答系統",
 )
 st.markdown("---")
 
@@ -486,7 +495,7 @@ if not st.session_state.messages and is_ready:
     <div style="text-align: center; padding: 60px 20px; color: #57606a;">
         <div style="font-size: 3rem; margin-bottom: 16px;">🧠</div>
         <div style="font-family: 'JetBrains Mono', monospace; font-size: 1rem; color: #24292f;">
-            LangChain 知識庫已就緒
+            Jason 的個人筆記知識庫已就緒
         </div>
         <div style="font-size: 0.85rem; margin-top: 8px;">
             在下方輸入問題，或點選左側範例問題開始

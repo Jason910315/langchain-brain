@@ -1,67 +1,65 @@
-# 🧠 LangChain Brain — RAG 文件問答系統
+# 🧠 Personal Notes Brain — 個人筆記 RAG 問答系統
 
-針對 **LangChain 生態系** 官方文件所建立的 RAG 問答系統。以 **LlamaIndex** 為核心框架，結合 Qdrant 向量資料庫與 Google Drive 文件來源，讓開發者用自然語言詢問 LangChain、LangGraph、LangSmith 相關問題，並取得附有來源引用的精確答案。
+以**個人 HackMD 筆記**為知識來源的 RAG 問答系統。以 **LlamaIndex** 為核心框架，結合 Qdrant 向量資料庫，讓你用自然語言詢問自己過去寫過的任何筆記內容，系統回傳答案並附上來源引用。
 
 ## 系統功能
 
 | 功能 | 描述 |
 | :--- | :--- |
 | **混合檢索（Hybrid Search）** | 結合向量相似度搜尋與 `BM25` 關鍵字匹配，以 **RRF 演算法** 融合兩者排名。 |
-| **Google Drive 文件自動同步** | 所有文件來源自 Google Drive，新文件進入也可透過比對快速更新知識庫。 |
-| **來源引用** | 每則回答附帶可展開的來源區塊，顯示文件名稱、RRF 相關性分數與內容預覽。 |
-| **Streamlit 聊天介面** | GitHub 風格聊天 UI，支援對話歷史、範例問題快速輸入、Top-K chunks 可調整 |
+| **HackMD 增量同步** | 可自動偵測筆記更新，只重建有變動的筆記 chunk，不重建整個 collection。 |
+| **來源引用** | 每則回答附帶可展開的來源區塊，顯示筆記標題、相關性分數與內容預覽。 |
+| **多輪對話記憶** | `CondensePlusContextChatEngine` 多輪問答，記憶跨越整個對話 session。 |
+| **歷史對話管理** | Streamlit 側邊欄列出所有歷史對話，可切換、重新開啟或刪除。 |
+| **LLM 自由切換** | 支援 OpenAI / Anthropic / Fine-tuned 模型，前端 selectbox 即時切換。 |
 
 ## 🌲 File Tree
 
 ```text
 langchain-brain/
-├── google-service-account.json   # 服務帳戶憑證
-├── .env                          
+├── .env                         
 ├── config.py                     # LLM / Embedding 工廠函式 + LlamaIndex Settings
 ├── requirements.txt
-├── main.py                     
-├── app.py                        # Streamlit 聊天介面
+├── main.py                       # CLI 問答入口
+├── app.py                        # Streamlit 聊天介面（含歷史對話側邊欄）
+├── scheduler.py                  
 ├── db/
-│   └── chat_store.py             # 處理對話訊息的資料庫 CRUD 操作
+│   └── chat_store.py             # Supabase CRUD：sessions / messages 對話持久化
 ├── ingestion/
-│   ├── doc_loader.py             # Google Drive API 文件載入
-│   └── sync_docs.py              # Drive ↔ Qdrant 差異同步
+│   ├── hackmd_loader.py          # HackMD API 筆記載入
+│   └── sync_notes.py             # HackMD ↔ Qdrant 增量同步（新增 + 更新偵測）
 └── rag/
     ├── indexer.py                # IngestionPipeline + Qdrant index 管理
     ├── retriever.py              # 混合檢索（Vector + BM25 + RRF）
-    └── pipeline.py               # RetrieverQueryEngine
+    └── pipeline.py               # CondensePlusContextChatEngine 多輪對話
 ```
 
 * `config.py`
 控制 RAG 流程中所有模型變數，包括負責回答生成的 LLM 與負責向量化的 Embedding 模型，並透過 LlamaIndex 的全域物件 `Settings` 統一注入至 pipeline 各層。
 
-對話介面
-![對話介面](images/chat_interface.jpg)
-
 ## 🔄 RAG Pipeline
 
-### 文件同步流程
-實際應用中知識庫的文件會不定時更新。若每次重啟伺服器都自動執行同步，則每次開啟頁面時都需要重新跑完整的 `Chunking → Embedding`，十分耗時嚴重影響使用者體驗。因此 app 的側邊欄提供 `🔄 同步新文件` 按鈕，由使用者自行決定同步時機。
+### 知識庫同步流程（增量更新）
 
-```
-            點擊「🔄 同步新文件」
-                      │
-                      ▼
-┌─────────────────────────────────────────────────┐
-│  ingestion/doc_loader.py                        │
-│  Google Drive API → 取得所有 MD/MDX file_id 清單  │                
-└─────────────────────┬───────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────┐
-│  ingestion/sync_docs.py                         │
-│  比對 Drive 內檔案與 Qdrant collection 內文件     │
-│   → 判斷是否有新文件需更新                        │
-│   →  呼叫 IngestionPipeline                     │ 
-└─────────────────────┬───────────────────────────┘
-                      │
-                      ▼
-             知識庫更新完成
+```mermaid
+flowchart TD
+    A([🔔 觸發同步]) --> B[取得 HackMD 所有筆記清單]
+    B --> C[撈取 Qdrant 現有筆記索引]
+    C --> D{note_id 在 Qdrant 內？}
+
+    D -- 不存在 --> E[新筆記：直接 ingest]
+    D -- 存在但時間更新 --> F[已更新：先刪舊 chunk 再 ingest]
+    D -- 存在且時間相同 --> G([跳過])
+
+    E --> H[Chunking → Embedding → 寫入 Qdrant]
+    F --> H
+    H --> I([✅ 同步完成])
+    G --> I
+
+    style A fill:#4A90D9,color:#fff,stroke:none
+    style F fill:#E0B422,color:#fff,stroke:none
+    style E fill:#888,color:#fff,stroke:none
+    style I fill:#2A9D8F,color:#fff,stroke:none
 ```
 
 ### 查詢流程
@@ -73,76 +71,99 @@ sequenceDiagram
     participant App as app.py
     participant Retriever as rag/retriever.py
     participant Qdrant as Qdrant Cloud
-    participant rag/pipeline.py as rag/pipeline.py
+    participant Engine as rag/pipeline.py
 
     User->>App: 輸入問題
     App->>Retriever: 建立混合檢索
     Qdrant->>Retriever: VectorIndexRetriever（餘弦相似度）
     Qdrant->>Retriever: BM25Retriever（關鍵字搜尋）
     Retriever->>Retriever: QueryFusionRetriever（RRF 融合排名）
-    App->>rag/pipeline.py: Top K chunks + 問題 → RetrieverQueryEngine()
-    rag/pipeline.py-->>App: 生成回答
-    App-->>User: 回答 + 來源引用
+    App->>Engine: Top K chunks + 問題 → CondensePlusContextChatEngine
+    Engine-->>App: 生成回答
+    App-->>User: 回答 + 來源引用（筆記標題 + 內容預覽）
 ```
 
 ## 🛠️ 技術堆疊
 
 | 領域 | 技術 | 說明 |
 | :--- | :--- | :--- |
-| **RAG 框架** | LlamaIndex | IngestionPipeline、QueryEngine、Retriever 整合 |
-| **向量資料庫** | Qdrant Cloud | 將知識庫上雲端，儲存 chunk 向量與 metadata |
-| **關鍵字搜尋** | BM25Retriever | 本地全文搜尋，與向量搜尋互補 |
-| **原始文件儲存** | Google Drive API（Service Account） | 遞迴掃描資料夾，下載 MD / MDX 文件 |
+| **RAG 框架** | LlamaIndex | IngestionPipeline、ChatEngine、Retriever 整合 |
+| **向量資料庫** | Qdrant Cloud | 儲存 chunk 向量與 metadata（note_id、title、tags、lastChangedAt） |
+| **筆記來源** | HackMD API（Bearer token） | 私人筆記，每篇有唯一 note_id 和 lastChangedAt 時間戳 |
 | **前端介面** | Streamlit | 聊天 UI、狀態管理、`@st.cache_resource` 快取 |
 | **對話持久化** | Supabase | 跨會話儲存問答紀錄，側邊欄歷史對話管理 |
 
 ### 🚀 核心技術亮點
 
-- **RRF 混合排名**：`向量搜尋` 與 `BM25` 分數尺度不相容，**RRF** 直接對排名做融合（`score = Σ 1/(k + rankᵢ)`），無需正規化，技術文件的精確術語與語意查詢皆能準確命中。
-- **快取**：streamlit app 以 `@st.cache_resource` 將 query_engine 建立包裝成快取函式，初次執行後結果會保存在記憶體中供重新渲染直接使用。
-- **歷史對話記憶管理**： 使用 `CondensePlusContextChatEngine` 建構多輪對話引擎，使每一次查詢都包含歷史記憶。
-- **LLM 拒答機制**：Retriever 永遠回傳 Top-K 結果，若檢索結果上下文不足時主動說明無法回答，避免幻覺。
-
+- **增量更新（先刪後建）**：用 `note_id` 作為 Qdrant payload filter，偵測到筆記更新時只刪除該篇的所有舊 chunk 再重新 embed，不重建整個 collection。
+- **RRF 混合排名**：`向量搜尋` 與 `BM25` 分數尺度不相容，RRF 直接對排名做融合（`score = Σ 1/(k + rankᵢ)`），無需正規化，技術術語與語意查詢皆能準確命中。
+- **多輪對話記憶**：使用 `CondensePlusContextChatEngine`，每次查詢前先將歷史對話壓縮成單一問題，再帶著 context 向量庫做檢索。
+- **`@st.cache_resource` 快取**：將 query engine 建立包裝成快取函式，初次執行後結果保存在記憶體中，只有當有狀態更動才需重建 engine。
 
 ## Quick Start
 
 ### 環境設定
 
 1. 在專案根目錄建立 `.env`：
+
 ```env
-EMBEDDING_PROVIDER=openai        # openai | qwen
+# 回答模型
+LLM_PROVIDER="OpenAI/gpt-4o-mini"     # OpenAI/gpt-4o-mini | Anthropic/claude-sonnet-4-6
+
+# Embedding 模型（切換時需重建 index）
+EMBEDDING_PROVIDER="text-embedding-3-small"   # text-embedding-3-small | qwen
 
 OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...     # 使用 Anthropic 時必填
-OPENROUTER_API_KEY=sk-or-...     # 使用 Qwen embedding 時必填
+ANTHROPIC_API_KEY=sk-ant-...           # 使用 Anthropic LLM 時必填
+OPENROUTER_API_KEY=sk-or-...           # 使用 Qwen embedding 時必填
 
+# HackMD API token（Settings > API > Create token）
+HACKMD_API_TOKEN=...
+
+# Qdrant 向量資料庫
 QDRANT_URL=https://xxx.qdrant.io
 QDRANT_API_KEY=...
 
-GOOGLE_DRIVE_FOLDER_ID=...       # Google Drive 根資料夾 ID
-
+# Supabase 對話持久化
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_KEY=...
-DEFAULT_USER_ID=...              # 暫時的單一使用者 ID
+DEFAULT_USER_ID=...                    # 暫時的單一使用者 ID
 ```
 
-2. **Service Account**
-記得先去 GCP 申請一個 **服務帳戶 (SA)**，並且取得 `json` 憑證存在專案中，這樣才有權限去讀取你 Google Drive 內的檔案。
-
-### 🔌 啟動服務
+2. 安裝依賴並啟動：
 
 ```bash
 pip install -r requirements.txt
+
+# 首次使用：手動執行一次完整同步，將 HackMD 筆記匯入知識庫
+python ingestion/sync_notes.py
+
+# 啟動 Streamlit 前端
 streamlit run app.py
-# 預設應用運行於 http://localhost:8501
+```
+預設運行於 `http://localhost:8501`
+
+### 常用指令
+
+```bash
+# 測試 HackMD loader（印出筆記數量與標題清單）
+python ingestion/hackmd_loader.py
+
+# 手動觸發一次增量同步
+python ingestion/sync_notes.py
+
+# CLI 問答模式
+python main.py
 ```
 
 ## Qdrant Collection 設計
 
-| Collection | Embedding Provider | 向量維度 | 說明 |
-| :--- | :--- | :--- | :--- |
-| `langchain_docs_text-embedding-3-small` | OpenAI `text-embedding-3-small` | 1536 | 預設 collection |
-| `langchain_docs_qwen3-embedding-8b` | Qwen `qwen3-embedding-8b`（OpenRouter） | 4096 | 切換 Qwen 時自動建立 |
+Collection 命名規則：`personal_notes_{embedding_provider}`。切換 embedding 時自動建立新 collection，舊的保留不動，兩者互不干擾。
+
+| Collection | Embedding Provider | 說明 |
+| :--- | :--- | :--- |
+| `personal_notes_text-embedding-3-small` | OpenAI `text-embedding-3-small` | 預設 collection |
+| `personal_notes_qwen` | Qwen `qwen3-embedding-8b`（OpenRouter） | 切換 Qwen 時自動建立 |
 
 ## Supabase 資料庫設計
 
@@ -157,13 +178,3 @@ streamlit run app.py
 ## 🔑 Third-Party Licenses
 
 本專案引用的第三方套件詳見 `requirements.txt`。
-
-
-## 🔑 補充
-Langchain 文件來源 : 官方資料
-```
-git clone https://github.com/langchain-ai/docs.git
-```
-只取其中兩個資料夾
-src/oss/        ← LangChain + LangGraph 文件
-src/langsmith/  ← LangSmith 文件

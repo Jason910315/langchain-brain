@@ -45,7 +45,7 @@ def create_fine_tuning_job(client: OpenAI, file_id: str) -> str:
             "supervised": {
                 # 微調過程的超參數，n_epochs 代表訓練幾輪
                 "hyperparameters": {
-                    "n_epochs": "3"
+                    "n_epochs": "3",
                 }
             }
         },

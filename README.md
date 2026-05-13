@@ -1,6 +1,6 @@
-# 🧠 Personal Brain — 個人 HackMD 筆記 RAG 問答系統
+# 🧠 Personal Notes Brain — 個人筆記 RAG 問答系統
 
-以**個人 HackMD 筆記**為知識來源的 RAG 問答系統。以 **LlamaIndex** 為核心框架，結合 Qdrant 向量資料庫，讓你用自然語言詢問自己過去寫過的任何筆記內容，系統回傳答案並附上來源引用。知識庫每天定時更新，偵測到筆記有變動時只重建該篇，不重建整個 collection。
+以**個人 HackMD 筆記**為知識來源的 RAG 問答系統。以 **LlamaIndex** 為核心框架，結合 Qdrant 向量資料庫，讓你用自然語言詢問自己過去寫過的任何筆記內容，系統回傳答案並附上來源引用。
 
 ## 系統功能
 
@@ -41,7 +41,7 @@ langchain-brain/
 
 ### 知識庫同步流程（增量更新）
 
-```
+```mermaid
 flowchart TD
     A([🔔 觸發同步]) --> B[取得 HackMD 所有筆記清單]
     B --> C[撈取 Qdrant 現有筆記索引]
@@ -95,10 +95,10 @@ sequenceDiagram
 
 ### 🚀 核心技術亮點
 
-- **增量更新（先刪後建）**：用 `note_id` 作為 Qdrant payload filter，偵測到筆記更新時只刪除該篇的所有舊 chunk 再重新 embed，不重建整個 collection，節省 embedding 費用。
+- **增量更新（先刪後建）**：用 `note_id` 作為 Qdrant payload filter，偵測到筆記更新時只刪除該篇的所有舊 chunk 再重新 embed，不重建整個 collection。
 - **RRF 混合排名**：`向量搜尋` 與 `BM25` 分數尺度不相容，RRF 直接對排名做融合（`score = Σ 1/(k + rankᵢ)`），無需正規化，技術術語與語意查詢皆能準確命中。
 - **多輪對話記憶**：使用 `CondensePlusContextChatEngine`，每次查詢前先將歷史對話壓縮成單一問題，再帶著 context 向量庫做檢索。
-- **`@st.cache_resource` 快取**：將 query engine 建立包裝成快取函式，初次執行後結果保存在記憶體中，切換側邊欄對話不會重建 engine。
+- **`@st.cache_resource` 快取**：將 query engine 建立包裝成快取函式，初次執行後結果保存在記憶體中，只有當有狀態更動才需重建 engine。
 
 ## Quick Start
 
@@ -140,8 +140,8 @@ python ingestion/sync_notes.py
 
 # 啟動 Streamlit 前端
 streamlit run app.py
-# 預設運行於 http://localhost:8501
 ```
+預設運行於 `http://localhost:8501`
 
 ### 常用指令
 
@@ -164,18 +164,6 @@ Collection 命名規則：`personal_notes_{embedding_provider}`。切換 embeddi
 | :--- | :--- | :--- |
 | `personal_notes_text-embedding-3-small` | OpenAI `text-embedding-3-small` | 預設 collection |
 | `personal_notes_qwen` | Qwen `qwen3-embedding-8b`（OpenRouter） | 切換 Qwen 時自動建立 |
-
-### Chunk Payload 設計
-
-每個 chunk 在 Qdrant 內存以下 payload
-
-| 欄位 | 說明 |
-| :--- | :--- |
-| `note_id` | HackMD 唯一筆記 ID，用於增量更新的 filter delete |
-| `title` | 筆記標題 |
-| `tags` | 筆記標籤（逗號分隔字串） |
-| `source` | 來源類型，目前固定為 `hackmd` |
-| `lastChangedAt` | HackMD 上該筆記的最後修改時間（ISO 8601），用於變動偵測 |
 
 ## Supabase 資料庫設計
 

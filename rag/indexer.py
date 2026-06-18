@@ -31,9 +31,12 @@ def collection_exists() -> bool:
     """
     client = _get_qdrant_client()
     existing = [c.name for c in client.get_collections().collections]
+
+    # 連上 cluster，但裡面沒有 collection
     if COLLECTION_NAME not in existing:
         return False
     
+    # collection 裡面如果沒有資料也會傳 false
     return client.count(collection_name=COLLECTION_NAME).count > 0
 
 # --- 分為兩個分支 : build & load ---

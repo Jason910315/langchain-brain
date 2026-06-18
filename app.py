@@ -160,10 +160,9 @@ def _build_engine(answer_llm, top_k):
     from rag.pipeline import build_multi_turn_chat_engine
     setup_settings(answer_llm)   # 前端使用者可自由選回答模型，一換模型若沒有該快取的 key 就重建 engine
 
-    # 知識庫尚未建立的階段，要先按同步按鈕建立
-    # 注意!!!!其實這個判斷警示不應該顯示在前端，因為建立知識庫是我們開發者事先就要全部建立好，而不是交由使用者按鈕 (但還是保留避免例外)
+    # 知識庫尚未建立的階段，要先按同步按鈕建立 (每個使用者有他們自己的知識來源，所以首次使用可能會還沒建立，需要提示)
     if not collection_exists():
-        raise RuntimeError("知識庫尚未建立，請按「🔄 同步新文件」按鈕進行初始化")
+        raise RuntimeError("知識庫尚未建立，請按「🔄 同步筆記知識庫」按鈕進行初始化")
 
     # 已經有知識庫 collection，載入並建立成 index
     index = load_index(answer_llm)
@@ -406,6 +405,20 @@ def process_question(question: str):
     # --- 2. 處理 assistant 訊息 ---
     # 呼叫 RAG pipeline 
     with st.chat_message("assistant"):
+
+        # 載入頁面時會初始化 chat_engine，但若失敗就不會賦值，就會是 None
+        if chat_engine is None:
+            canned = "⚠️ 知識庫尚未建立，請先按左側「🔄同步筆記知識庫」按鈕匯入筆記後再提問。"
+            st.warning(canned)
+
+            # 將罐頭回答 (知識庫不能用) 顯示在前端
+            st.session_state.messages.append({"role": "assistant", "content": canned, "sources": []})
+
+            # 罐頭回答也要存進對話資料庫，因為算錯誤
+            chat_store.save_message(st.session_state.current_session_id, "assistant", canned, [])
+
+            return
+
         with st.spinner("搜尋知識庫中..."):
             try:
                 # 當下 messages 都是從 load_messages() 方法取出，因此直接從前端狀態拿
@@ -473,7 +486,7 @@ def process_question(question: str):
 
 # --- 處理問題進入後的邏輯 (丟進 RAG 的查詢回答以及，需判斷問問題是否有新開 session)---
 # 1. 處理範例問題
-if pending and is_ready:
+if pending:
     prev_session_id = st.session_state.current_session_id
     process_question(pending)  # 當成一般的問題丟進去呼叫 RAG
 
@@ -482,8 +495,8 @@ if pending and is_ready:
         st.rerun()  # 重跑頁面讓側邊欄也更新
 
 # 2. 處理使用者輸入
-question = st.chat_input("問題...")  
-if question:                          # 再判斷
+question = st.chat_input("問題...")
+if question:
     prev_session_id = st.session_state.current_session_id
     process_question(question)
 
@@ -491,7 +504,7 @@ if question:                          # 再判斷
         st.rerun()  
 
 # --- 空白狀態提示 ---
-if not st.session_state.messages and is_ready:
+if not st.session_state.messages:
     st.markdown("""
     <div style="text-align: center; padding: 60px 20px; color: #57606a;">
         <div style="font-size: 3rem; margin-bottom: 16px;">🧠</div>

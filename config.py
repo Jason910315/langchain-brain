@@ -13,7 +13,7 @@ QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 # 切換 LLM 時 embedding 維度不同，不能共用同一個 collection，要重建
-COLLECTION_NAME = f"personal_notes_{EMBEDDING_PROVIDER}"
+COLLECTION_NAME = f"personal_notes_text-embedding-3-small"
 
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64

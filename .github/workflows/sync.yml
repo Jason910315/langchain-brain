@@ -5,7 +5,7 @@ name: Sync HackMD Notes
 on: 
   schedule:
     -cron: "0 19 * * * "   # UTC 19:00 = TW 3:00
-  workflow_dispacth:       # 支援網頁 github 手動觸發
+  workflow_dispatch:       # 支援網頁 github 手動觸發
 
 # 要執行的任務
 jobs: 

@@ -1,0 +1,38 @@
+# Workflow name
+name: Sync HackMD Notes
+
+# 觸發的時機
+on: 
+  schedule:
+    -cron: "0 19 * * * "   # UTC 19:00 = TW 3:00
+  workflow_dispacth:       # 支援網頁 github 手動觸發
+
+# 要執行的任務
+jobs: 
+  sync:
+    runs-on: ubuntu-latest  # 跑在 ubuntu 虛擬機上
+
+    steps:  # 分為 4 步
+      - name: Checkout code
+        # 把 repo 程式下載到這台虛擬機 (將程式碼簽出到 runner 上)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        # 安裝 Python 版本
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+        
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Run sync
+        env:
+            OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+            EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
+            HACKMD_API_TOKEN: ${{ secrets.HACKMD_API_TOKEN }}
+            QDRANT_URL: ${{ secrets.QDRANT_URL }}
+            QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+        # 最後跑 sync_notes.py 程式，同步知識庫內容
+        run: python ingestion/sync_notes.py
+

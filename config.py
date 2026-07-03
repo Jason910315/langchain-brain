@@ -65,22 +65,12 @@ def get_embedding():
     Qdrant 的 collection 是獨立的，你讀取他就代表他檢索使用的會跟 embedding 時一樣的模型，因此你不用額外設定。
     這個函式取得 embedding 與 retrieval 使用的模型，在 .env 切換後所有程式都會從 Settings.embed_model 取得模型。
     """
-    if EMBEDDING_PROVIDER == "text-embedding-3-small":
-          from llama_index.embeddings.openai import OpenAIEmbedding
-          return OpenAIEmbedding(
-              model="text-embedding-3-small",
-              api_key=os.environ["OPENAI_API_KEY"],
-          )
-    elif EMBEDDING_PROVIDER == "qwen":
-        from llama_index.embeddings.openai_like import OpenAILikeEmbedding
-        return OpenAILikeEmbedding(
-            model_name="qwen/qwen3-embedding-8b",
-            api_key=os.environ["OPENROUTER_API_KEY"],
-            api_base="https://openrouter.ai/api/v1",
-            embed_batch_size=10,
-        )
-    else:
-          raise ValueError(f"不支援的 EMBEDDING_PROVIDER: {EMBEDDING_PROVIDER}")
+    from llama_index.embeddings.openai import OpenAIEmbedding
+    return OpenAIEmbedding(
+        model="text-embedding-3-small",
+        api_key=os.environ["OPENAI_API_KEY"],
+    )
+
 
 # 這邊回答模型用傳入的，讓前端使用者自由選取模型後，app.py 傳入
 def setup_settings(answer_llm):

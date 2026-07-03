@@ -4,7 +4,7 @@ name: Sync HackMD Notes
 # 觸發的時機
 on: 
   schedule:
-    -cron: "0 19 * * * "   # UTC 19:00 = TW 3:00
+    - cron: "0 19 * * * "   # UTC 19:00 = TW 3:00
   workflow_dispatch:       # 支援網頁 github 手動觸發
 
 # 要執行的任務
